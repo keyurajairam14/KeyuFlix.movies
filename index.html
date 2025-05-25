@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>KeyuFlix – Stream Movies & Series</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #121212;
+      color: white;
+      margin: 20px;
+    }
+    h1, h2 {
+      color: #00bcd4;
+      text-align: center;
+    }
+    #searchContainer {
+      text-align: center;
+      margin-bottom: 25px;
+    }
+    #searchInput {
+      width: 60%;
+      max-width: 400px;
+      padding: 10px;
+      font-size: 1rem;
+      border-radius: 5px 0 0 5px;
+      border: none;
+      outline: none;
+    }
+    #searchBtn {
+      padding: 10px 20px;
+      font-size: 1rem;
+      border: none;
+      border-radius: 0 5px 5px 0;
+      background: #00bcd4;
+      color: black;
+      cursor: pointer;
+    }
+    #latestMovies, #latestTVShows, #results {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 15px;
+      margin-bottom: 30px;
+    }
+    .resultItem {
+      width: 140px;
+      cursor: pointer;
+      transition: transform 0.2s ease;
+    }
+    .resultItem:hover {
+      transform: scale(1.05);
+    }
+    .resultItem img {
+      width: 100%;
+      border-radius: 6px;
+      box-shadow: 0 0 6px #00bcd4;
+    }
+    .resultTitle {
+      margin-top: 6px;
+      font-size: 0.9rem;
+      text-align: center;
+      height: 40px;
+      overflow: hidden;
+    }
+    #playerSection {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.85);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      z-index: 9999;
+    }
+    #playerSection.hidden {
+      display: none;
+    }
+    #videoPlayer {
+      width: 80vw;
+      height: 45vw;
+      max-width: 960px;
+      max-height: 540px;
+      border: none;
+      border-radius: 10px;
+      background: black;
+      box-shadow: 0 0 15px #00bcd4;
+    }
+    #playerTitle {
+      margin: 10px 0;
+      font-size: 1.3rem;
+      text-align: center;
+    }
+    #closePlayerBtn {
+      margin-top: 15px;
+      background: #00bcd4;
+      border: none;
+      padding: 10px 25px;
+      border-radius: 25px;
+      font-weight: bold;
+      cursor: pointer;
+      color: black;
+    }
+    #seasonEpisodeSelectors {
+      margin-bottom: 15px;
+      color: white;
+      text-align: center;
+    }
+    #seasonEpisodeSelectors label {
+      margin-right: 6px;
+      font-weight: bold;
+    }
+    #seasonEpisodeSelectors select {
+      margin-right: 15px;
+      padding: 5px 8px;
+      border-radius: 5px;
+      border: none;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>KeyuFlix🎬– Stream Movies & Series📽️</h1>
+
+  <div id="searchContainer">
+    <input type="text" id="searchInput" placeholder="Type a movie or TV show name" />
+    <button id="searchBtn">Search</button>
+  </div>
+
+  <h2>Latest Movies</h2>
+  <div id="latestMovies"></div>
+
+  <h2>Latest TV Shows</h2>
+  <div id="latestTVShows"></div>
+
+  <div id="results"></div>
+
+  <section id="playerSection" class="hidden">
+    <h3 id="playerTitle"></h3>
+
+    <div id="seasonEpisodeSelectors" style="display:none;">
+      <label for="seasonSelect">Season:</label>
+      <select id="seasonSelect"></select>
+
+      <label for="episodeSelect">Episode:</label>
+      <select id="episodeSelect"></select>
+    </div>
+
+    <iframe id="videoPlayer" src="" allowfullscreen allow="autoplay; fullscreen"></iframe>
+    <button id="closePlayerBtn">Close Player</button>
+  </section>
+
+<script>
+  const apiKey = "8f81bf1ed290d33e9f2ecaaf8b36f5b7";
+
+  const searchInput = document.getElementById('searchInput');
+  const searchBtn = document.getElementById('searchBtn');
+  const resultsContainer = document.getElementById('results');
+  const latestMoviesContainer = document.getElementById('latestMovies');
+  const latestTVShowsContainer = document.getElementById('latestTVShows');
+  const playerSection = document.getElementById('playerSection');
+  const videoPlayer = document.getElementById('videoPlayer');
+  const playerTitle = document.getElementById('playerTitle');
+  const closePlayerBtn = document.getElementById('closePlayerBtn');
+  const seasonEpisodeSelectors = document.getElementById('seasonEpisodeSelectors');
+  const seasonSelect = document.getElementById('seasonSelect');
+  const episodeSelect = document.getElementById('episodeSelect');
+
+  // ✅ Only vidsrc as provider
+  const providers = [
+    {
+      name: 'vidsrc',
+      movie: id => `https://vidsrc.xyz/embed/movie?tmdb=${id}`,
+      tv: (id, season, episode) => `https://vidsrc.xyz/embed/tv?tmdb=${id}&season=${season}&episode=${episode}`
+    }
+  ];
+
+  let currentItem = null;
+  let currentSeasonNumber = 1;
+  let currentEpisodeNumber = 1;
+  let providerIndex = 0;
+  let providerTimeout = null;
+  let currentTVShowDetails = null;
+
+  searchBtn.addEventListener('click', () => {
+    const query = searchInput.value.trim();
+    if (!query) return alert('Please enter a search term');
+    resultsContainer.innerHTML = '';
+    latestMoviesContainer.style.display = 'none';
+    latestTVShowsContainer.style.display = 'none';
+    search(query);
+  });
+
+  searchInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') searchBtn.click();
+  });
+
+  closePlayerBtn.addEventListener('click', () => {
+    playerSection.classList.add('hidden');
+    videoPlayer.src = '';
+    seasonEpisodeSelectors.style.display = 'none';
+    seasonSelect.innerHTML = '';
+    episodeSelect.innerHTML = '';
+    currentTVShowDetails = null;
+  });
+
+  async function search(query) {
+    const url = `https://api.themoviedb.org/3/search/multi?api_key=${apiKey}&language=en-US&query=${encodeURIComponent(query)}&page=1&include_adult=false`;
+    try {
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (!data.results || data.results.length === 0) {
+        resultsContainer.innerHTML = '<p style="text-align:center; width:100%;">No results found.</p>';
+        return;
+      }
+
+      resultsContainer.innerHTML = '';
+      data.results.forEach(item => {
+        if(item.media_type === 'movie' || item.media_type === 'tv') {
+          const el = createResultItem(item);
+          resultsContainer.appendChild(el);
+        }
+      });
+    } catch (err) {
+      alert('Error fetching search results');
+      console.error(err);
+    }
+  }
+
+  function createResultItem(item) {
+    const div = document.createElement('div');
+    div.className = 'resultItem';
+    div.title = item.title || item.name;
+
+    const img = document.createElement('img');
+    img.src = item.poster_path
+      ? `https://image.tmdb.org/t/p/w342${item.poster_path}`
+      : 'https://via.placeholder.com/140x210?text=No+Image';
+
+    const titleDiv = document.createElement('div');
+    titleDiv.className = 'resultTitle';
+    titleDiv.textContent = item.title || item.name;
+
+    div.appendChild(img);
+    div.appendChild(titleDiv);
+
+    div.onclick = () => {
+      if (item.media_type === 'movie') {
+        onMovieClick(item);
+      } else if (item.media_type === 'tv') {
+        onTVShowClick(item);
+      }
+    };
+
+    return div;
+  }
+
+  function onMovieClick(item) {
+    currentItem = item;
+    seasonEpisodeSelectors.style.display = 'none';
+    playerTitle.textContent = item.title || '';
+    providerIndex = 0;
+    setEmbedSrc(item, null, null);
+    playerSection.classList.remove('hidden');
+  }
+
+  async function onTVShowClick(item) {
+    currentItem = item;
+    try {
+      const url = `https://api.themoviedb.org/3/tv/${item.id}?api_key=${apiKey}&language=en-US`;
+      const res = await fetch(url);
+      const data = await res.json();
+      currentTVShowDetails = data;
+
+      if (data.seasons && data.seasons.length > 0) {
+        seasonEpisodeSelectors.style.display = 'block';
+
+        seasonSelect.innerHTML = '';
+        data.seasons.forEach(season => {
+          if (season.season_number > 0) {
+            const option = document.createElement('option');
+            option.value = season.season_number;
+            option.textContent = `Season ${season.season_number}`;
+            seasonSelect.appendChild(option);
+          }
+        });
+
+        currentSeasonNumber = parseInt(seasonSelect.value);
+        populateEpisodes(currentSeasonNumber);
+
+        seasonSelect.onchange = () => {
+          currentSeasonNumber = parseInt(seasonSelect.value);
+          populateEpisodes(currentSeasonNumber);
+        };
+
+        episodeSelect.onchange = () => {
+          currentEpisodeNumber = parseInt(episodeSelect.value);
+          playEpisode(currentTVShowDetails.id, currentSeasonNumber, currentEpisodeNumber, currentTVShowDetails.name);
+        };
+      } else {
+        seasonEpisodeSelectors.style.display = 'none';
+        playerTitle.textContent = item.name || '';
+        providerIndex = 0;
+        setEmbedSrc(item, 1, 1);
+        playerSection.classList.remove('hidden');
+      }
+    } catch (error) {
+      alert('Failed to load TV show details');
+      console.error(error);
+    }
+  }
+
+  function populateEpisodes(seasonNum) {
+    const seasonInfo = currentTVShowDetails.seasons.find(s => s.season_number === seasonNum);
+    episodeSelect.innerHTML = '';
+    if (!seasonInfo || !seasonInfo.episode_count) {
+      episodeSelect.disabled = true;
+      return;
+    }
+    episodeSelect.disabled = false;
+
+    for(let i = 1; i <= seasonInfo.episode_count; i++) {
+      const option = document.createElement('option');
+      option.value = i;
+      option.textContent = `Episode ${i}`;
+      episodeSelect.appendChild(option);
+    }
+
+    currentEpisodeNumber = 1;
+    episodeSelect.value = currentEpisodeNumber;
+    playEpisode(currentTVShowDetails.id, currentSeasonNumber, currentEpisodeNumber, currentTVShowDetails.name);
+  }
+
+  function playEpisode(tvId, season, episode, title) {
+    playerTitle.textContent = title || '';
+    providerIndex = 0;
+    setEmbedSrc({ id: tvId, media_type: 'tv' }, season, episode);
+    playerSection.classList.remove('hidden');
+  }
+
+  function setEmbedSrc(item, season, episode) {
+    if (providerTimeout) clearTimeout(providerTimeout);
+    if (providerIndex >= providers.length) {
+      alert('Sorry, no playable sources available.');
+      videoPlayer.src = '';
+      return;
+    }
+
+    const provider = providers[providerIndex];
+    let url = '';
+
+    if (item.media_type === 'movie') {
+      url = provider.movie(item.id);
+    } else if (item.media_type === 'tv') {
+      url = provider.tv(item.id, season, episode);
+    }
+
+    videoPlayer.src = url;
+  }
+
+  async function loadLatest() {
+    try {
+      const moviesRes = await fetch(`https://api.themoviedb.org/3/movie/now_playing?api_key=${apiKey}&language=en-US&page=1`);
+      const moviesData = await moviesRes.json();
+      latestMoviesContainer.innerHTML = '';
+      moviesData.results.slice(0, 12).forEach(movie => {
+        const el = createResultItem({...movie, media_type: 'movie'});
+        latestMoviesContainer.appendChild(el);
+      });
+      latestMoviesContainer.style.display = 'flex';
+
+      const tvRes = await fetch(`https://api.themoviedb.org/3/tv/on_the_air?api_key=${apiKey}&language=en-US&page=1`);
+      const tvData = await tvRes.json();
+      latestTVShowsContainer.innerHTML = '';
+      tvData.results.slice(0, 12).forEach(tv => {
+        const el = createResultItem({...tv, media_type: 'tv'});
+        latestTVShowsContainer.appendChild(el);
+      });
+      latestTVShowsContainer.style.display = 'flex';
+    } catch (err) {
+      console.error('Failed to load latest movies and TV shows', err);
+    }
+  }
+
+  loadLatest();
+</script>
+
+</body>
+</html>
